@@ -117,6 +117,10 @@ def classify_line(line: str | bytes) -> tuple[str, str]:
 def stream_error_from_payload(obj: dict[str, Any]) -> UpstreamError | None:
     """Convert upstream in-band stream error payloads to retryable errors."""
     error = obj.get("error")
+    # Also check nested path: result.response.error (Grok's in-band error format)
+    if not isinstance(error, dict):
+        resp = (obj.get("result") or {}).get("response") or {}
+        error = resp.get("error")
     if not isinstance(error, dict):
         return None
 
@@ -124,7 +128,7 @@ def stream_error_from_payload(obj: dict[str, Any]) -> UpstreamError | None:
     message = str(raw_message)
     code = error.get("code")
     text = message.lower()
-    status = 429 if code == 8 or "too many requests" in text or "rate limit" in text else 502
+    status = 429 if code == 8 or "too many requests" in text or "rate limit" in text or "limit" in text else 502
 
     try:
         body = orjson.dumps(obj).decode()

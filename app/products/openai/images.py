@@ -546,7 +546,24 @@ async def _generate_lite(
                     )
                     yield f"data: {orjson.dumps(chunk).decode()}\n\n"
 
-            images = await task
+            try:
+                images = await task
+            except BaseException as exc:
+                err_msg = str(exc)
+                if isinstance(exc, ExceptionGroup):
+                    first = exc.exceptions[0] if exc.exceptions else exc
+                    err_msg = str(first)
+                chunk = make_stream_chunk(
+                    response_id,
+                    spec.model_name,
+                    "",
+                    is_final=True,
+                )
+                chunk["error"] = {"message": err_msg, "type": "server_error"}
+                yield f"data: {orjson.dumps(chunk).decode()}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             for image in images:
                 chunk = make_stream_chunk(
                     response_id,
@@ -563,21 +580,28 @@ async def _generate_lite(
 
     reasoning_updates: list[str] = []
     progress_map: dict[int, int] = {}
-    images = await _run_lite_batch(
-        spec=spec,
-        prompt=prompt,
-        n=n,
-        timeout_s=timeout_s,
-        response_format=response_format,
-        progress_cb=lambda idx, progress: _lite_progress_updates(
-            idx=idx,
-            progress=progress,
-            total=n,
-            progress_map=progress_map,
-            updates=reasoning_updates,
-            enabled=chat_format,
-        ),
-    )
+    try:
+        images = await _run_lite_batch(
+            spec=spec,
+            prompt=prompt,
+            n=n,
+            timeout_s=timeout_s,
+            response_format=response_format,
+            progress_cb=lambda idx, progress: _lite_progress_updates(
+                idx=idx,
+                progress=progress,
+                total=n,
+                progress_map=progress_map,
+                updates=reasoning_updates,
+                enabled=chat_format,
+            ),
+        )
+    except BaseException as exc:
+        err_msg = str(exc)
+        if isinstance(exc, ExceptionGroup):
+            first = exc.exceptions[0] if exc.exceptions else exc
+            err_msg = str(first)
+        raise RuntimeError(f"Image generation failed: {err_msg}") from exc
     if chat_format:
         content = "\n\n".join(image.markdown_value for image in images)
         reasoning = "\n".join(reasoning_updates) if reasoning_updates else None
@@ -1032,6 +1056,7 @@ async def _run_lite_request(
                         )
                         success = True
                         return image
+            logger.warning("lite image stream completed with no image")
             raise UpstreamError("Image generation returned no images")
         except UpstreamError as exc:
             fail_exc = exc
