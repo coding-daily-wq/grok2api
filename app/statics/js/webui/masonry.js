@@ -6,6 +6,69 @@
   const PROMPT_MAX_HEIGHT = 160;
   const RECONNECT_DELAY_MS = 250;
 
+  // --- Image Lightbox -------------------------------------------------------
+  let _lbImages = [];
+  let _lbIndex = 0;
+
+  function _lbUpdateSrc() {
+    const overlay = document.getElementById('imgLightbox');
+    if (!overlay) return;
+    const img = overlay.querySelector('.img-lightbox-img');
+    const counter = overlay.querySelector('.img-lightbox-counter');
+    const prev = overlay.querySelector('.img-lightbox-prev');
+    const next = overlay.querySelector('.img-lightbox-next');
+    img.src = _lbImages[_lbIndex];
+    counter.textContent = `${_lbIndex + 1} / ${_lbImages.length}`;
+    prev.style.display = _lbImages.length > 1 ? '' : 'none';
+    next.style.display = _lbImages.length > 1 ? '' : 'none';
+  }
+
+  function openImageLightbox(src) {
+    if (!src) return;
+    _lbImages = [];
+    _lbIndex = 0;
+    // Collect all images from the masonry feed
+    feed?.querySelectorAll('.webui-masonry-tile img').forEach((el) => {
+      const s = el.currentSrc || el.src;
+      if (s && !s.startsWith('data:') && !el.closest('.img-lightbox-overlay')) _lbImages.push(s);
+    });
+    if (_lbImages.length === 0) _lbImages.push(src);
+    _lbIndex = Math.max(0, _lbImages.indexOf(src));
+
+    let overlay = document.getElementById('imgLightbox');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'imgLightbox';
+      overlay.className = 'img-lightbox-overlay';
+      overlay.innerHTML =
+        '<span class="img-lightbox-close">&times;</span>' +
+        '<span class="img-lightbox-prev">&lsaquo;</span>' +
+        '<img class="img-lightbox-img" />' +
+        '<span class="img-lightbox-next">&rsaquo;</span>' +
+        '<span class="img-lightbox-counter"></span>';
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay || e.target.classList.contains('img-lightbox-close')) {
+          overlay.classList.remove('active');
+        } else if (e.target.classList.contains('img-lightbox-prev')) {
+          _lbIndex = (_lbIndex - 1 + _lbImages.length) % _lbImages.length;
+          _lbUpdateSrc();
+        } else if (e.target.classList.contains('img-lightbox-next')) {
+          _lbIndex = (_lbIndex + 1) % _lbImages.length;
+          _lbUpdateSrc();
+        }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (!overlay.classList.contains('active')) return;
+        if (e.key === 'Escape') overlay.classList.remove('active');
+        else if (e.key === 'ArrowLeft') { _lbIndex = (_lbIndex - 1 + _lbImages.length) % _lbImages.length; _lbUpdateSrc(); }
+        else if (e.key === 'ArrowRight') { _lbIndex = (_lbIndex + 1) % _lbImages.length; _lbUpdateSrc(); }
+      });
+      document.body.appendChild(overlay);
+    }
+    _lbUpdateSrc();
+    overlay.classList.add('active');
+  }
+
   const promptInput = document.getElementById('promptInput');
   const sendBtn = document.getElementById('sendBtn');
   const feed = document.getElementById('masonryFeed');
@@ -168,14 +231,18 @@
 
     const link = document.createElement('a');
     link.className = 'webui-masonry-tile-link';
-    link.target = '_blank';
-    link.rel = 'noopener';
     link.setAttribute('aria-label', text('webui.masonry.openImage', '打开图片'));
     link.title = text('webui.masonry.openImage', '打开图片');
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openImageLightbox(img.currentSrc || img.src);
+    });
 
     const img = document.createElement('img');
     img.alt = `image ${index}`;
     img.loading = 'lazy';
+    img.style.cursor = 'zoom-in';
     link.appendChild(img);
 
     const label = document.createElement('div');
